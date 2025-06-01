@@ -16,6 +16,7 @@ const User = require('../models/User');
 const Voter = require('../models/Voter');
 const { logActivity } = require('../utils/logger');
 const { protect, authorize } = require('../middleware/auth');
+const { verifyVoterCredentials } = require('../data/mockVoterRegistry');
 
 const router = express.Router();
 
@@ -53,10 +54,19 @@ router.post('/register', [
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
-
   const { name, email, password, nin, voterId } = req.body;
 
   try {
+    // First, verify voter credentials against mock registry
+    const verification = verifyVoterCredentials(nin, voterId, name);
+    
+    if (!verification.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: verification.message
+      });
+    }
+
     // Check if user email exists
     let user = await User.findOne({ email });
     if (user) {
@@ -77,7 +87,7 @@ router.post('/register', [
 
     // Create user with voter role
     user = await User.create({
-      name,
+      name: verification.verifiedName, // Use verified name from registry
       email,
       password,
       role: 'voter'
@@ -88,20 +98,22 @@ router.post('/register', [
       user: user._id,
       nin,
       voterId,
-      // In a real system, verification would be done against an external system
-      // For now, we'll just set it to false until admin verifies
-      verified: false
-    });
-
-    // Log activity
+      // Since credentials are verified against registry, automatically set as verified
+      verified: true,
+      verifiedAt: new Date()
+    });    // Log activity
     await logActivity({
       level: 'INFO',
-      message: 'New voter registered',
+      message: 'New voter registered and verified against registry',
       component: 'Authentication',
       action: 'Register',
       userId: user._id,
       userRole: 'voter',
-      ipAddress: req.ip
+      ipAddress: req.ip,
+      metadata: {
+        voterVerified: true,
+        verificationSource: 'mockRegistry'
+      }
     });
 
     // Create JWT token
@@ -109,13 +121,14 @@ router.post('/register', [
 
     res.status(201).json({
       success: true,
-      message: 'Voter registered successfully',
+      message: 'Voter registered and verified successfully',
       token,
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role
+        role: user.role,
+        verified: true
       }
     });
   } catch (error) {

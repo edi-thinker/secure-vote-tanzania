@@ -60,10 +60,9 @@ export default function VoterDashboard() {
           if (myVoteData.data && myVoteData.data.hasVoted) {
             setHasVoted(true)
             setUserVote(myVoteData.data)
-            // Try to get stored vote hash for display
-            const storedHash = localStorage.getItem(`vote_hash_${parsedUser.email}`)
-            if (storedHash) {
-              setVoteHash(storedHash)
+            // Use the confirmation ID from the response as vote hash
+            if (myVoteData.data.confirmationId) {
+              setVoteHash(myVoteData.data.confirmationId)
             }
           }
         } catch (voteErr) {
@@ -93,22 +92,17 @@ export default function VoterDashboard() {
     }
 
     try {
-      // Generate mock vote hash
-      const timestamp = new Date().toISOString()
-      const voteData = `${userData.email}_${selectedCandidate._id}_${timestamp}`
-      const hash = btoa(voteData).substring(0, 16) // Mock hash
-
-      // Store vote data
-      localStorage.setItem(`voted_${userData.email}`, "true")
-      localStorage.setItem(`vote_hash_${userData.email}`, hash)
-      localStorage.setItem(`vote_candidate_${userData.email}`, selectedCandidate._id)
-      localStorage.setItem(`vote_timestamp_${userData.email}`, timestamp)
-
+      setLoading(true)
+      
+      // Cast vote - the backend will handle hashing and storing
       const response = await voterAPI.castVote({ candidateId: selectedCandidate._id }, userData.token)
       
-      // Use response data if available, otherwise use mock hash
-      const responseHash = response.data?.confirmationId || hash
-      setVoteHash(responseHash)
+      // Use the confirmation ID from the response
+      const confirmationId = response.data?.confirmationId
+      if (confirmationId) {
+        setVoteHash(confirmationId)
+      }
+      
       setHasVoted(true)
       setShowConfirmDialog(false)
       setShowConfirmation(true)
@@ -118,6 +112,8 @@ export default function VoterDashboard() {
     } catch (err) {
       console.error("Voting error:", err)
       setError(err.message || "Failed to cast vote. Please try again.")
+    } finally {
+      setLoading(false)
     }
   }
 
