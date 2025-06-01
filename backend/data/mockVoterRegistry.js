@@ -40,11 +40,10 @@ const mockVoterRegistry = [
     voterId: "VT20240006",
     name: "Sarah Consolata Mbeki",
     isEligible: true
-  },
-  {
+  },  {
     nin: "33445566778899001122",
     voterId: "VT20240007",
-    name: "James Mrisho Ngasa",
+    name: "James Mrisho Ngoma",
     isEligible: true
   },
   {
@@ -93,19 +92,34 @@ const verifyVoterCredentials = (nin, voterId, name) => {
       message: 'Voter is not eligible to vote'
     };
   }
-
   // Check if name matches (case insensitive, allowing for slight variations)
   const normalizedInputName = name.toLowerCase().trim();
   const normalizedRegistryName = registryRecord.name.toLowerCase().trim();
   
-  // Allow for partial name matching (registry name should contain the input name or vice versa)
-  const nameMatches = normalizedRegistryName.includes(normalizedInputName) || 
+  // Split names into words for more flexible matching
+  const inputWords = normalizedInputName.split(/\s+/);
+  const registryWords = normalizedRegistryName.split(/\s+/);
+  
+  // Check if at least 2 words match or if input name is contained in registry name
+  let matchingWords = 0;
+  for (const inputWord of inputWords) {
+    if (registryWords.some(regWord => regWord.includes(inputWord) || inputWord.includes(regWord))) {
+      matchingWords++;
+    }
+  }
+  
+  // Consider it a match if:
+  // 1. At least 2 words match, OR
+  // 2. Input name is contained in registry name, OR
+  // 3. Registry name is contained in input name
+  const nameMatches = matchingWords >= 2 || 
+                     normalizedRegistryName.includes(normalizedInputName) || 
                      normalizedInputName.includes(normalizedRegistryName);
 
   if (!nameMatches) {
     return {
       isValid: false,
-      message: 'Name does not match voter registry records'
+      message: `Name does not match voter registry records. Expected: "${registryRecord.name}", Provided: "${name}"`
     };
   }
 

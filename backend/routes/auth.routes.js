@@ -55,17 +55,28 @@ router.post('/register', [
     return res.status(400).json({ errors: errors.array() });
   }
   const { name, email, password, nin, voterId } = req.body;
-
   try {
     // First, verify voter credentials against mock registry
     const verification = verifyVoterCredentials(nin, voterId, name);
     
     if (!verification.isValid) {
+      console.log('Voter verification failed:', {
+        nin: `${nin.substring(0, 4)}****${nin.substring(nin.length - 4)}`,
+        voterId,
+        name,
+        error: verification.message
+      });
+      
       return res.status(400).json({
         success: false,
         message: verification.message
       });
     }
+
+    console.log('Voter verification successful:', {
+      voterId,
+      verifiedName: verification.verifiedName
+    });
 
     // Check if user email exists
     let user = await User.findOne({ email });
