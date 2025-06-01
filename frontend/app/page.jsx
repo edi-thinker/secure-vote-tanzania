@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet"
 import { Shield, Lock, Eye, Server, ArrowRight, Users, CheckCircle, Menu } from "lucide-react"
 import { useRouter } from "next/navigation"
 
@@ -42,6 +42,7 @@ export default function HomePage() {
                   </Button>
                 </SheetTrigger>
                 <SheetContent side="right" className="bg-gray-900 border-gray-700">
+                  <SheetTitle className="sr-only">Mobile Navigation Menu</SheetTitle>
                   <div className="flex flex-col space-y-4 mt-8">
                     <Button
                       variant="ghost"

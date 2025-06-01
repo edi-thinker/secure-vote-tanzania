@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet"
 import {
   Shield,
   Download,
@@ -24,60 +24,8 @@ import {
   Menu,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
-
-// Mock data for auditor
-const mockVoteChain = [
-  { id: 1, hash: "a1b2c3d4e5f6", prevHash: "0000000000", timestamp: "2024-01-15 09:15:23", verified: true },
-  { id: 2, hash: "b2c3d4e5f6a1", prevHash: "a1b2c3d4e5f6", timestamp: "2024-01-15 09:18:45", verified: true },
-  { id: 3, hash: "c3d4e5f6a1b2", prevHash: "b2c3d4e5f6a1", timestamp: "2024-01-15 09:22:11", verified: true },
-  { id: 4, hash: "d4e5f6a1b2c3", prevHash: "c3d4e5f6a1b2", timestamp: "2024-01-15 09:25:33", verified: true },
-  { id: 5, hash: "e5f6a1b2c3d4", prevHash: "d4e5f6a1b2c3", timestamp: "2024-01-15 09:28:57", verified: true },
-]
-
-const mockSystemLogs = [
-  {
-    id: 1,
-    level: "INFO",
-    message: "Vote chain verification completed",
-    timestamp: "2024-01-15 10:00:00",
-    component: "Integrity Checker",
-  },
-  {
-    id: 2,
-    level: "INFO",
-    message: "Database backup completed successfully",
-    timestamp: "2024-01-15 09:45:00",
-    component: "Backup Service",
-  },
-  {
-    id: 3,
-    level: "WARN",
-    message: "High vote volume detected",
-    timestamp: "2024-01-15 09:30:00",
-    component: "Load Monitor",
-  },
-  {
-    id: 4,
-    level: "INFO",
-    message: "Admin login: admin@demo.com",
-    timestamp: "2024-01-15 09:15:00",
-    component: "Auth Service",
-  },
-  {
-    id: 5,
-    level: "INFO",
-    message: "New candidate added: Dr. Amina Hassan",
-    timestamp: "2024-01-15 09:00:00",
-    component: "Admin Panel",
-  },
-]
-
-const mockCandidateStats = [
-  { id: 1, name: "Dr. Amina Hassan", party: "Progressive Party of Tanzania (PPT)", votes: 1247, percentage: 38.2 },
-  { id: 2, name: "John Mwalimu", party: "Democratic Alliance Tanzania (DAT)", votes: 892, percentage: 27.3 },
-  { id: 3, name: "Grace Kimaro", party: "Tanzania Unity Movement (TUM)", votes: 1156, percentage: 35.4 },
-  { id: 4, name: "Mohamed Ali", party: "National Development Party (NDP)", votes: 734, percentage: 22.5 },
-]
+import { auditorAPI } from "@/lib/api"
+import { withAuth } from "@/lib/withAuth"
 
 const sidebarItems = [
   { id: "overview", label: "Overview", icon: Home },
@@ -85,6 +33,7 @@ const sidebarItems = [
   { id: "statistics", label: "Statistics", icon: BarChart3 },
   { id: "logs", label: "System Logs", icon: FileText },
   { id: "reports", label: "Reports", icon: Download },
+  { id: "settings", label: "Settings", icon: Shield }
 ]
 
 export default function AuditorDashboard() {
@@ -94,6 +43,13 @@ export default function AuditorDashboard() {
   const [isVerifying, setIsVerifying] = useState(false)
   const [verificationComplete, setVerificationComplete] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  // Real data state
+  const [voteChain, setVoteChain] = useState([])
+  const [systemLogs, setSystemLogs] = useState([])
+  const [candidateStats, setCandidateStats] = useState([])
+  const [systemStatus, setSystemStatus] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
   const router = useRouter()
 
   useEffect(() => {
@@ -110,43 +66,139 @@ export default function AuditorDashboard() {
     }
 
     setUser(parsedUser)
+    fetchDashboardData(parsedUser.token)
   }, [router])
 
-  const handleVerifyChain = () => {
-    setIsVerifying(true)
-    setVerificationProgress(0)
+  const fetchDashboardData = async (token) => {
+    try {
+      setLoading(true)
+      setError("")
 
-    const interval = setInterval(() => {
-      setVerificationProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval)
-          setIsVerifying(false)
-          setVerificationComplete(true)
-          return 100
-        }
-        return prev + 10
+      // Fetch all data in parallel
+      const [
+        voteCountResponse,
+        voteChainResponse,
+        systemLogsResponse,
+        systemStatusResponse
+      ] = await Promise.all([
+        auditorAPI.getVoteCount(token),
+        auditorAPI.getVoteChain(token),
+        auditorAPI.getSystemLogs(token),
+        auditorAPI.getSystemStatus(token)
+      ])
+
+      // Process vote count data to match the expected format
+      const processedCandidateStats = voteCountResponse.data.map((candidate, index) => ({
+        id: candidate._id,
+        name: candidate.name,
+        party: candidate.party,
+        votes: candidate.count,
+        percentage: 0 // Will calculate after getting total
+      }))
+
+      // Calculate percentages
+      const totalVotes = processedCandidateStats.reduce((sum, candidate) => sum + candidate.votes, 0)
+      processedCandidateStats.forEach(candidate => {
+        candidate.percentage = totalVotes > 0 ? ((candidate.votes / totalVotes) * 100).toFixed(1) : 0
       })
-    }, 200)
+
+      // Process vote chain data to match expected format
+      const processedVoteChain = voteChainResponse.data.map((vote, index) => ({
+        id: index + 1,
+        hash: vote.voteHash?.substring(0, 12) || `hash-${index + 1}`,
+        prevHash: vote.prevHash?.substring(0, 12) || "0000000000",
+        timestamp: new Date(vote.timestamp).toLocaleString(),
+        verified: vote.verified
+      }))
+
+      // Process system logs to match expected format
+      const processedSystemLogs = systemLogsResponse.data.map((log, index) => ({
+        id: index + 1,
+        level: log.level,
+        message: log.message,
+        timestamp: new Date(log.timestamp).toLocaleString(),
+        component: log.component
+      }))
+
+      setCandidateStats(processedCandidateStats)
+      setVoteChain(processedVoteChain)
+      setSystemLogs(processedSystemLogs)
+      setSystemStatus(systemStatusResponse.data)
+
+    } catch (error) {
+      console.error("Error fetching dashboard data:", error)
+      setError("Failed to load dashboard data")
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handleDownloadReport = () => {
-    const reportData = {
-      timestamp: new Date().toISOString(),
-      totalVotes: mockVoteChain.length,
-      verifiedVotes: mockVoteChain.filter((v) => v.verified).length,
-      integrityStatus: "VERIFIED",
-      candidates: mockCandidateStats,
-    }
+  const handleVerifyChain = async () => {
+    if (!user?.token) return
 
-    const blob = new Blob([JSON.stringify(reportData, null, 2)], { type: "application/json" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `integrity-report-${new Date().toISOString().split("T")[0]}.json`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    setIsVerifying(true)
+    setVerificationProgress(0)
+    setError("")
+
+    try {
+      // Simulate progress updates for better UX
+      const progressInterval = setInterval(() => {
+        setVerificationProgress((prev) => {
+          if (prev >= 90) {
+            clearInterval(progressInterval)
+            return 90
+          }
+          return prev + 10
+        })
+      }, 200)
+
+      // Call the actual verification API
+      const verificationResult = await auditorAPI.verifyVoteChain(user.token)
+      
+      // Complete the progress
+      clearInterval(progressInterval)
+      setVerificationProgress(100)
+      setVerificationComplete(true)
+      
+      // Update system status with verification result
+      setSystemStatus(prev => ({
+        ...prev,
+        voteChain: {
+          ...prev?.voteChain,
+          status: verificationResult.data.valid ? 'VALID' : 'INVALID',
+          message: verificationResult.data.message
+        }
+      }))
+
+    } catch (error) {
+      console.error("Verification error:", error)
+      setError("Failed to verify vote chain")
+      setVerificationProgress(0)
+    } finally {
+      setIsVerifying(false)
+    }
+  }
+
+  const handleDownloadReport = async () => {
+    if (!user?.token) return
+
+    try {
+      const reportResponse = await auditorAPI.getIntegrityReport(user.token)
+      const reportData = reportResponse.data
+
+      const blob = new Blob([JSON.stringify(reportData, null, 2)], { type: "application/json" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `integrity-report-${new Date().toISOString().split("T")[0]}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error("Download error:", error)
+      setError("Failed to download integrity report")
+    }
   }
 
   const handleLogout = () => {
@@ -154,11 +206,22 @@ export default function AuditorDashboard() {
     router.push("/")
   }
 
-  const totalVotes = mockCandidateStats.reduce((sum, candidate) => sum + candidate.votes, 0)
-  const verifiedVotes = mockVoteChain.filter((v) => v.verified).length
-  const integrityScore = ((verifiedVotes / mockVoteChain.length) * 100).toFixed(1)
+  const totalVotes = candidateStats.reduce((sum, candidate) => sum + candidate.votes, 0)
+  const verifiedVotes = voteChain.filter((v) => v.verified).length
+  const integrityScore = voteChain.length > 0 ? ((verifiedVotes / voteChain.length) * 100).toFixed(1) : "0.0"
 
   if (!user) return null
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-400 mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading auditor dashboard...</p>
+        </div>
+      </div>
+    )
+  }
 
   const SidebarContent = () => (
     <>
@@ -182,8 +245,12 @@ export default function AuditorDashboard() {
               <button
                 key={item.id}
                 onClick={() => {
-                  setActiveTab(item.id)
-                  setSidebarOpen(false)
+                  if (item.id === "settings") {
+                    router.push("/auditor/settings");
+                  } else {
+                    setActiveTab(item.id)
+                    setSidebarOpen(false)
+                  }
                 }}
                 className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left transition-colors text-sm sm:text-base ${
                   activeTab === item.id
@@ -273,8 +340,12 @@ export default function AuditorDashboard() {
                   <Activity className="h-3 w-3 sm:h-4 sm:w-4 text-green-400" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-lg sm:text-2xl font-bold text-green-400">Healthy</div>
-                  <p className="text-xs text-gray-400">All systems operational</p>
+                  <div className="text-lg sm:text-2xl font-bold text-green-400">
+                    {systemStatus?.systemHealth?.status || "Loading..."}
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    {systemStatus?.systemHealth?.errorsLast24h === 0 ? "All systems operational" : `${systemStatus?.systemHealth?.errorsLast24h} errors in 24h`}
+                  </p>
                 </CardContent>
               </Card>
             </div>
@@ -286,26 +357,37 @@ export default function AuditorDashboard() {
                   <CardDescription className="text-sm">Real-time system monitoring</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3 sm:space-y-4">
+                  {error && (
+                    <Alert className="border-red-600 bg-red-950/30">
+                      <AlertTriangle className="h-3 w-3 sm:h-4 sm:w-4 text-red-400" />
+                      <AlertDescription className="text-red-300 text-xs sm:text-sm">
+                        {error}
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  
                   <Alert className="border-green-600 bg-green-950/30">
                     <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4 text-green-400" />
                     <AlertDescription className="text-green-300 text-xs sm:text-sm">
-                      Vote chain integrity verified - No anomalies detected
+                      Vote chain integrity: {systemStatus?.voteChain?.status || "Checking..."}
                     </AlertDescription>
                   </Alert>
 
                   <Alert className="border-blue-600 bg-blue-950/30">
                     <Activity className="h-3 w-3 sm:h-4 sm:w-4 text-blue-400" />
                     <AlertDescription className="text-blue-300 text-xs sm:text-sm">
-                      Database backup completed successfully at 09:45 AM
+                      Total votes processed: {systemStatus?.voteMetrics?.totalVotes || 0}
                     </AlertDescription>
                   </Alert>
 
-                  <Alert className="border-yellow-600 bg-yellow-950/30">
-                    <AlertTriangle className="h-3 w-3 sm:h-4 sm:w-4 text-yellow-400" />
-                    <AlertDescription className="text-yellow-300 text-xs sm:text-sm">
-                      High vote volume detected - System performing normally
-                    </AlertDescription>
-                  </Alert>
+                  {systemStatus?.systemHealth?.errorsLast24h > 0 && (
+                    <Alert className="border-yellow-600 bg-yellow-950/30">
+                      <AlertTriangle className="h-3 w-3 sm:h-4 sm:w-4 text-yellow-400" />
+                      <AlertDescription className="text-yellow-300 text-xs sm:text-sm">
+                        {systemStatus.systemHealth.errorsLast24h} errors detected in the last 24 hours
+                      </AlertDescription>
+                    </Alert>
+                  )}
                 </CardContent>
               </Card>
 
@@ -316,7 +398,7 @@ export default function AuditorDashboard() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {mockSystemLogs.slice(0, 5).map((log) => (
+                    {systemLogs.slice(0, 5).map((log) => (
                       <div
                         key={log.id}
                         className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 bg-gray-800 rounded-lg space-y-2 sm:space-y-0"
@@ -325,9 +407,9 @@ export default function AuditorDashboard() {
                           <Badge
                             variant="outline"
                             className={`text-xs ${
-                              log.level === "WARN"
+                              log.level === "WARN" || log.level === "WARNING"
                                 ? "border-yellow-500 text-yellow-400"
-                                : log.level === "ERROR"
+                                : log.level === "ERROR" || log.level === "CRITICAL"
                                   ? "border-red-500 text-red-400"
                                   : "border-green-500 text-green-400"
                             }`}
@@ -342,6 +424,9 @@ export default function AuditorDashboard() {
                         <p className="text-xs text-gray-400">{log.timestamp}</p>
                       </div>
                     ))}
+                    {systemLogs.length === 0 && (
+                      <p className="text-sm text-gray-400 text-center py-4">No recent system logs available</p>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -396,7 +481,7 @@ export default function AuditorDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {mockVoteChain.map((vote) => (
+                  {voteChain.slice(0, 10).map((vote) => (
                     <div
                       key={vote.id}
                       className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 sm:p-4 bg-gray-800 rounded-lg border border-gray-700 space-y-2 sm:space-y-0"
@@ -418,6 +503,9 @@ export default function AuditorDashboard() {
                       </div>
                     </div>
                   ))}
+                  {voteChain.length === 0 && (
+                    <p className="text-sm text-gray-400 text-center py-4">No vote chain data available</p>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -439,7 +527,7 @@ export default function AuditorDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {mockCandidateStats.map((candidate) => (
+                  {candidateStats.length > 0 ? candidateStats.map((candidate) => (
                     <div key={candidate.id} className="space-y-2">
                       <div className="flex justify-between">
                         <div>
@@ -457,7 +545,9 @@ export default function AuditorDashboard() {
                         ></div>
                       </div>
                     </div>
-                  ))}
+                  )) : (
+                    <p className="text-sm text-gray-400 text-center py-4">No candidate statistics available</p>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -470,7 +560,7 @@ export default function AuditorDashboard() {
                 <CardContent className="space-y-3 sm:space-y-4">
                   <div className="flex justify-between text-sm sm:text-base">
                     <span>Total Registered Voters:</span>
-                    <span className="font-bold">4,750</span>
+                    <span className="font-bold">{systemStatus?.voteMetrics?.totalRegisteredVoters || "N/A"}</span>
                   </div>
                   <div className="flex justify-between text-sm sm:text-base">
                     <span>Votes Cast:</span>
@@ -478,11 +568,16 @@ export default function AuditorDashboard() {
                   </div>
                   <div className="flex justify-between text-sm sm:text-base">
                     <span>Turnout Rate:</span>
-                    <span className="font-bold text-green-400">{((totalVotes / 4750) * 100).toFixed(1)}%</span>
+                    <span className="font-bold text-green-400">
+                      {systemStatus?.voteMetrics?.totalRegisteredVoters 
+                        ? ((totalVotes / systemStatus.voteMetrics.totalRegisteredVoters) * 100).toFixed(1)
+                        : "N/A"
+                      }%
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm sm:text-base">
                     <span>Invalid Votes:</span>
-                    <span className="font-bold">0</span>
+                    <span className="font-bold">{systemStatus?.voteMetrics?.invalidVotes || 0}</span>
                   </div>
                 </CardContent>
               </Card>
@@ -494,19 +589,21 @@ export default function AuditorDashboard() {
                 <CardContent className="space-y-3 sm:space-y-4">
                   <div className="flex justify-between text-sm sm:text-base">
                     <span>Hash Verification:</span>
-                    <span className="font-bold text-green-400">100%</span>
+                    <span className="font-bold text-green-400">{integrityScore}%</span>
                   </div>
                   <div className="flex justify-between text-sm sm:text-base">
                     <span>Chain Integrity:</span>
-                    <span className="font-bold text-green-400">Verified</span>
+                    <span className={`font-bold ${systemStatus?.voteChain?.status === 'VALID' ? 'text-green-400' : 'text-red-400'}`}>
+                      {systemStatus?.voteChain?.status || "Checking..."}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm sm:text-base">
                     <span>Duplicate Votes:</span>
-                    <span className="font-bold">0</span>
+                    <span className="font-bold">{systemStatus?.voteMetrics?.duplicateVotes || 0}</span>
                   </div>
                   <div className="flex justify-between text-sm sm:text-base">
                     <span>Security Alerts:</span>
-                    <span className="font-bold">0</span>
+                    <span className="font-bold">{systemStatus?.systemHealth?.errorsLast24h || 0}</span>
                   </div>
                 </CardContent>
               </Card>
@@ -534,7 +631,7 @@ export default function AuditorDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {mockSystemLogs.map((log) => (
+                  {systemLogs.length > 0 ? systemLogs.map((log) => (
                     <div
                       key={log.id}
                       className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 sm:p-4 bg-gray-800 rounded-lg border border-gray-700 space-y-2 sm:space-y-0"
@@ -543,9 +640,9 @@ export default function AuditorDashboard() {
                         <Badge
                           variant="outline"
                           className={`text-xs ${
-                            log.level === "WARN"
+                            log.level === "WARN" || log.level === "WARNING"
                               ? "border-yellow-500 text-yellow-400"
-                              : log.level === "ERROR"
+                              : log.level === "ERROR" || log.level === "CRITICAL"
                                 ? "border-red-500 text-red-400"
                                 : "border-green-500 text-green-400"
                           }`}
@@ -561,7 +658,9 @@ export default function AuditorDashboard() {
                         <p className="text-xs sm:text-sm text-gray-300">{log.timestamp}</p>
                       </div>
                     </div>
-                  ))}
+                  )) : (
+                    <p className="text-sm text-gray-400 text-center py-4">No system logs available</p>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -695,6 +794,7 @@ export default function AuditorDashboard() {
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="bg-gray-900 border-gray-700 p-0 w-64">
+              <SheetTitle className="sr-only">Auditor Navigation Menu</SheetTitle>
               <div className="flex flex-col h-full">
                 <SidebarContent />
               </div>

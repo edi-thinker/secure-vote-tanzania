@@ -9,13 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Shield, LogIn, AlertCircle } from "lucide-react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-
-// Mock user database with credentials and roles
-const mockUsers = {
-  "voter@demo.com": { password: "password123", role: "voter", name: "John Doe" },
-  "admin@demo.com": { password: "admin123", role: "admin", name: "Admin User" },
-  "auditor@demo.com": { password: "audit123", role: "auditor", name: "System Auditor" },
-}
+import { authAPI } from "@/lib/api"
 
 export default function LoginPage() {
   const [loginForm, setLoginForm] = useState({ email: "", password: "" })
@@ -28,25 +22,47 @@ export default function LoginPage() {
     setIsLoading(true)
     setError("")
 
-    // Simulate authentication delay
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    try {
+      // Send login request to API
+      const response = await authAPI.login({
+        email: loginForm.email,
+        password: loginForm.password
+      })
+      
+      // Check if MFA is required for admin/auditor
+      if (response.requireMFA) {
+        // Redirect to MFA page with token in query params
+        router.push(`/auth/mfa?role=${response.role}&userId=${response.userId}`)
+        return
+      }
 
-    const user = mockUsers[loginForm.email]
-
-    if (!user || user.password !== loginForm.password) {
-      setError("Invalid email or password")
+      // Store token and user data
+      const userData = {
+        email: loginForm.email,
+        token: response.token,
+        role: response.user.role,
+        name: response.user.name,
+        id: response.user.id,
+        isAuthenticated: true,
+      }
+      localStorage.setItem("user", JSON.stringify(userData))
+      
+      // Redirect based on role
+      if (userData.role === "voter") {
+        router.push("/voter")
+      } else if (userData.role === "admin") {
+        router.push("/admin")
+      } else if (userData.role === "auditor") {
+        router.push("/auditor")
+      } else {
+        router.push("/")
+      }
+    } catch (err) {
+      console.error("Login error:", err)
+      setError(err.message || "Invalid email or password")
       setIsLoading(false)
       return
     }
-
-    // Store user data
-    const userData = {
-      email: loginForm.email,
-      role: user.role,
-      name: user.name,
-      isAuthenticated: true,
-    }
-    localStorage.setItem("user", JSON.stringify(userData))
 
     // Redirect based on role
     if (user.role === "admin") {

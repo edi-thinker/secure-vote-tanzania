@@ -2,10 +2,11 @@
   "name": "secure-vote-backend",
   "version": "1.0.0",
   "description": "Backend API for the SecureVote Tanzania voting system",
-  "main": "server.js",
-  "scripts": {
+  "main": "server.js",  "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "seed-admin-auditor": "node scripts/seed-admin-auditor.js",
+    "generate-mfa": "node scripts/generate-mfa-code.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

@@ -99,8 +99,21 @@ exports.require2FA = async (req, res, next) => {
       // Verify MFA token using user's secret
       const user = await User.findById(req.user._id).select('+mfaSecret');
       
-      // Validate MFA token (implementation using speakeasy would be here)
-      const validated = true; // Replace with actual validation logic
+      if (!user || !user.mfaSecret) {
+        return res.status(401).json({
+          success: false,
+          message: '2FA is not properly configured for this account.'
+        });
+      }
+      
+      // Use speakeasy to validate the TOTP token
+      const speakeasy = require('speakeasy');
+      const validated = speakeasy.totp.verify({
+        secret: user.mfaSecret,
+        encoding: 'base32',
+        token: mfaToken,
+        window: 1 // Allow 1 step variance for time drift (30 seconds before and after)
+      });
       
       if (!validated) {
         return res.status(401).json({

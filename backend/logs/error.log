@@ -1,0 +1,2 @@
+{"code":"ENOTFOUND","hostname":"_mongodb._tcp.vote","level":"error","message":"MongoDB connection error: querySrv ENOTFOUND _mongodb._tcp.vote","stack":"Error: querySrv ENOTFOUND _mongodb._tcp.vote\n    at QueryReqWrap.onresolve [as oncomplete] (node:internal/dns/promises:275:17)","syscall":"querySrv","timestamp":"2025-05-31T10:24:00.764Z"}
+{"level":"error","message":"413 - request entity too large - /api/admin/candidates - POST - ::1","timestamp":"2025-05-31T14:02:05.042Z"}

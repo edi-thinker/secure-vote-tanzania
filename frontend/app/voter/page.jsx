@@ -15,41 +15,14 @@ import {
 } from "@/components/ui/dialog"
 import { Vote, CheckCircle, User, LogOut, Shield, Clock } from "lucide-react"
 import { useRouter } from "next/navigation"
-
-// Mock candidates data
-const mockCandidates = [
-  {
-    id: 1,
-    name: "Dr. Amina Hassan",
-    party: "Progressive Party of Tanzania (PPT)",
-    photo: "/placeholder.svg?height=100&width=100",
-    description: "Former Minister of Health with 15 years of public service experience.",
-  },
-  {
-    id: 2,
-    name: "John Mwalimu",
-    party: "Democratic Alliance Tanzania (DAT)",
-    photo: "/placeholder.svg?height=100&width=100",
-    description: "Education advocate and former university professor.",
-  },
-  {
-    id: 3,
-    name: "Grace Kimaro",
-    party: "Tanzania Unity Movement (TUM)",
-    photo: "/placeholder.svg?height=100&width=100",
-    description: "Business leader and women's rights activist.",
-  },
-  {
-    id: 4,
-    name: "Mohamed Ali",
-    party: "National Development Party (NDP)",
-    photo: "/placeholder.svg?height=100&width=100",
-    description: "Former regional commissioner with focus on infrastructure development.",
-  },
-]
+import { voterAPI } from "@/lib/api"
 
 export default function VoterDashboard() {
-  const [user, setUser] = useState(null)
+  const [candidates, setCandidates] = useState([])
+  const [userVote, setUserVote] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+  const [userData, setUserData] = useState(null)
   const [hasVoted, setHasVoted] = useState(false)
   const [selectedCandidate, setSelectedCandidate] = useState(null)
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
@@ -57,27 +30,55 @@ export default function VoterDashboard() {
   const [voteHash, setVoteHash] = useState("")
   const router = useRouter()
 
+  // Check authentication and fetch data
   useEffect(() => {
-    const userData = localStorage.getItem("user")
-    if (!userData) {
-      router.push("/")
+    const user = localStorage.getItem("user")
+
+    if (!user) {
+      router.push("/auth/login")
       return
     }
 
-    const parsedUser = JSON.parse(userData)
-    if (parsedUser.role !== "voter") {
-      router.push("/")
+    const parsedUser = JSON.parse(user)
+
+    if (!parsedUser.isAuthenticated || parsedUser.role !== "voter") {
+      router.push("/auth/login")
       return
     }
 
-    setUser(parsedUser)
+    setUserData(parsedUser)
 
-    // Check if user has already voted
-    const votedStatus = localStorage.getItem(`voted_${parsedUser.email}`)
-    if (votedStatus) {
-      setHasVoted(true)
-      setVoteHash(localStorage.getItem(`vote_hash_${parsedUser.email}`) || "")
+    const fetchData = async () => {
+      try {
+        // Fetch candidates
+        const candidatesData = await voterAPI.getCandidates(parsedUser.token)
+        setCandidates(candidatesData.data || [])
+
+        // Check if user has already voted
+        try {
+          const myVoteData = await voterAPI.getMyVote(parsedUser.token)
+          if (myVoteData.data && myVoteData.data.hasVoted) {
+            setHasVoted(true)
+            setUserVote(myVoteData.data)
+            // Try to get stored vote hash for display
+            const storedHash = localStorage.getItem(`vote_hash_${parsedUser.email}`)
+            if (storedHash) {
+              setVoteHash(storedHash)
+            }
+          }
+        } catch (voteErr) {
+          // If no vote found, that's normal - user hasn't voted yet
+          console.log("No existing vote found (normal for new voters)")
+        }
+      } catch (err) {
+        console.error("Error fetching data:", err)
+        setError("Failed to load voting data. Please try again.")
+      } finally {
+        setLoading(false)
+      }
     }
+
+    fetchData()
   }, [router])
 
   const handleVote = (candidate) => {
@@ -85,22 +86,39 @@ export default function VoterDashboard() {
     setShowConfirmDialog(true)
   }
 
-  const confirmVote = () => {
-    // Generate mock vote hash
-    const timestamp = new Date().toISOString()
-    const voteData = `${user.email}_${selectedCandidate.id}_${timestamp}`
-    const hash = btoa(voteData).substring(0, 16) // Mock hash
+  const confirmVote = async () => {
+    if (!userData || !userData.token || !selectedCandidate) {
+      setError("You must be logged in to vote")
+      return
+    }
 
-    // Store vote data
-    localStorage.setItem(`voted_${user.email}`, "true")
-    localStorage.setItem(`vote_hash_${user.email}`, hash)
-    localStorage.setItem(`vote_candidate_${user.email}`, selectedCandidate.id.toString())
-    localStorage.setItem(`vote_timestamp_${user.email}`, timestamp)
+    try {
+      // Generate mock vote hash
+      const timestamp = new Date().toISOString()
+      const voteData = `${userData.email}_${selectedCandidate._id}_${timestamp}`
+      const hash = btoa(voteData).substring(0, 16) // Mock hash
 
-    setVoteHash(hash)
-    setHasVoted(true)
-    setShowConfirmDialog(false)
-    setShowConfirmation(true)
+      // Store vote data
+      localStorage.setItem(`voted_${userData.email}`, "true")
+      localStorage.setItem(`vote_hash_${userData.email}`, hash)
+      localStorage.setItem(`vote_candidate_${userData.email}`, selectedCandidate._id)
+      localStorage.setItem(`vote_timestamp_${userData.email}`, timestamp)
+
+      const response = await voterAPI.castVote({ candidateId: selectedCandidate._id }, userData.token)
+      
+      // Use response data if available, otherwise use mock hash
+      const responseHash = response.data?.confirmationId || hash
+      setVoteHash(responseHash)
+      setHasVoted(true)
+      setShowConfirmDialog(false)
+      setShowConfirmation(true)
+      
+      // Clear any previous errors
+      setError("")
+    } catch (err) {
+      console.error("Voting error:", err)
+      setError(err.message || "Failed to cast vote. Please try again.")
+    }
   }
 
   const handleLogout = () => {
@@ -108,7 +126,7 @@ export default function VoterDashboard() {
     router.push("/")
   }
 
-  if (!user) return null
+  if (loading) return null
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
@@ -123,7 +141,7 @@ export default function VoterDashboard() {
             <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-2 sm:space-y-0 sm:space-x-4 w-full sm:w-auto">
               <div className="flex items-center space-x-2">
                 <User className="h-3 w-3 sm:h-4 sm:w-4" />
-                <span className="text-xs sm:text-sm">{user.name}</span>
+                <span className="text-xs sm:text-sm">{userData.name}</span>
                 <Badge variant="outline" className="border-blue-500 text-blue-400 text-xs">
                   Voter
                 </Badge>
@@ -138,6 +156,19 @@ export default function VoterDashboard() {
       </header>
 
       <div className="container mx-auto px-4 py-6 sm:py-8">
+        {/* Error Display */}
+        {error && (
+          <div className="mb-6 p-4 bg-red-950/30 border border-red-800 rounded-lg">
+            <p className="text-red-300 text-sm">{error}</p>
+            <button 
+              onClick={() => setError("")} 
+              className="text-red-400 hover:text-red-300 text-xs mt-2"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
         {/* Voting Status */}
         <Card className="mb-6 sm:mb-8 bg-gray-900 border-gray-700">
           <CardHeader>
@@ -172,8 +203,8 @@ export default function VoterDashboard() {
         <div>
           <h2 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6">Presidential Candidates 2024</h2>
           <div className="grid sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-4 sm:gap-6">
-            {mockCandidates.map((candidate) => (
-              <Card key={candidate.id} className="bg-gray-900 border-gray-700 hover:border-gray-600 transition-colors">
+            {candidates.map((candidate) => (
+              <Card key={candidate._id} className="bg-gray-900 border-gray-700 hover:border-gray-600 transition-colors">
                 <CardHeader className="pb-4">
                   <div className="flex flex-col sm:flex-row items-center sm:items-start space-y-4 sm:space-y-0 sm:space-x-4">
                     <Avatar className="h-16 w-16 sm:h-20 sm:w-20 flex-shrink-0">

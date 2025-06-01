@@ -8,7 +8,7 @@
  */
 
 const express = require('express');
-const { protect, authorize, require2FA } = require('../middleware/auth');
+const { protect, authorize } = require('../middleware/auth');
 const Vote = require('../models/Vote');
 const SystemLog = require('../models/SystemLog');
 const { logActivity } = require('../utils/logger');
@@ -19,7 +19,6 @@ const router = express.Router();
 // Apply auth middleware to all routes
 router.use(protect);
 router.use(authorize('auditor'));
-router.use(require2FA);
 
 /**
  * @route   GET /api/auditor/vote-count

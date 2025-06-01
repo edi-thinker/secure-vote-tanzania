@@ -1,0 +1,14 @@
+{"code":"ENOTFOUND","hostname":"_mongodb._tcp.vote","level":"error","message":"MongoDB connection error: querySrv ENOTFOUND _mongodb._tcp.vote","stack":"Error: querySrv ENOTFOUND _mongodb._tcp.vote\n    at QueryReqWrap.onresolve [as oncomplete] (node:internal/dns/promises:275:17)","syscall":"querySrv","timestamp":"2025-05-31T10:24:00.764Z"}
+{"level":"info","message":"MongoDB connected","timestamp":"2025-05-31T10:37:50.813Z"}
+{"level":"info","message":"Server running on port 5000","timestamp":"2025-05-31T10:37:50.833Z"}
+{"level":"info","message":"MongoDB connected","timestamp":"2025-05-31T13:33:22.904Z"}
+{"level":"info","message":"Server running on port 5000","timestamp":"2025-05-31T13:33:22.921Z"}
+{"level":"info","message":"MongoDB connected","timestamp":"2025-05-31T13:42:10.679Z"}
+{"level":"info","message":"Server running on port 5000","timestamp":"2025-05-31T13:42:10.689Z"}
+{"level":"error","message":"413 - request entity too large - /api/admin/candidates - POST - ::1","timestamp":"2025-05-31T14:02:05.042Z"}
+{"level":"info","message":"MongoDB connected","timestamp":"2025-05-31T21:35:10.907Z"}
+{"level":"info","message":"Server running on port 5000","timestamp":"2025-05-31T21:35:10.958Z"}
+{"level":"info","message":"MongoDB connected","timestamp":"2025-05-31T22:48:19.842Z"}
+{"level":"info","message":"Server running on port 5000","timestamp":"2025-05-31T22:48:19.859Z"}
+{"level":"info","message":"MongoDB connected","timestamp":"2025-05-31T23:29:42.549Z"}
+{"level":"info","message":"Server running on port 5000","timestamp":"2025-05-31T23:29:42.564Z"}

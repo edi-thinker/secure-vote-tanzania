@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet"
 import {
   Dialog,
   DialogContent,
@@ -36,206 +36,337 @@ import {
   AlertTriangle,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { adminAPI } from "@/lib/api"
 
-// Mock data
-const mockCandidates = [
-  {
-    id: 1,
-    name: "Dr. Amina Hassan",
-    party: "Progressive Party of Tanzania (PPT)",
-    votes: 1247,
-    photo: "/placeholder.svg?height=100&width=100",
-  },
-  {
-    id: 2,
-    name: "John Mwalimu",
-    party: "Democratic Alliance Tanzania (DAT)",
-    votes: 892,
-    photo: "/placeholder.svg?height=100&width=100",
-  },
-  {
-    id: 3,
-    name: "Grace Kimaro",
-    party: "Tanzania Unity Movement (TUM)",
-    votes: 1156,
-    photo: "/placeholder.svg?height=100&width=100",
-  },
-  {
-    id: 4,
-    name: "Mohamed Ali",
-    party: "National Development Party (NDP)",
-    votes: 734,
-    photo: "/placeholder.svg?height=100&width=100",
-  },
-]
-
-const mockLogs = [
-  {
-    id: 1,
-    action: "Added candidate",
-    details: "Dr. Amina Hassan",
-    timestamp: "2024-01-15 10:30:00",
-    admin: "admin@demo.com",
-  },
-  {
-    id: 2,
-    action: "Updated candidate",
-    details: "John Mwalimu - Party name changed",
-    timestamp: "2024-01-15 11:45:00",
-    admin: "admin@demo.com",
-  },
-  {
-    id: 3,
-    action: "Deleted candidate",
-    details: "Test Candidate",
-    timestamp: "2024-01-15 12:15:00",
-    admin: "admin@demo.com",
-  },
-  {
-    id: 4,
-    action: "System backup",
-    details: "Automated backup completed",
-    timestamp: "2024-01-15 13:00:00",
-    admin: "system",
-  },
-]
+// No mock data - using real data from API only
 
 const sidebarItems = [
   { id: "overview", label: "Overview", icon: Home },
   { id: "candidates", label: "Candidates", icon: UserCheck },
   { id: "statistics", label: "Statistics", icon: BarChart3 },
   { id: "logs", label: "Activity Logs", icon: FileText },
-]
+  { id: "settings", label: "Settings", icon: Shield }
+];
 
 export default function AdminDashboard() {
-  const [user, setUser] = useState(null)
-  const [activeTab, setActiveTab] = useState("overview")
-  const [candidates, setCandidates] = useState(mockCandidates)
-  const [logs, setLogs] = useState(mockLogs)
-  const [showAddDialog, setShowAddDialog] = useState(false)
-  const [showEditDialog, setShowEditDialog] = useState(false)
-  const [editingCandidate, setEditingCandidate] = useState(null)
-  const [newCandidate, setNewCandidate] = useState({ name: "", party: "", description: "", photo: "" })
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [photoPreview, setPhotoPreview] = useState("")
-  const router = useRouter()
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
-  const [candidateToDelete, setCandidateToDelete] = useState(null)
-
+  const [activeTab, setActiveTab] = useState("overview");
+  const [candidates, setCandidates] = useState([]);
+  const [voters, setVoters] = useState([]);
+  const [statistics, setStatistics] = useState({});
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [userData, setUserData] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const router = useRouter();
+  
+  // Dialogs state
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [candidateToDelete, setCandidateToDelete] = useState(null);
+  const [editingCandidate, setEditingCandidate] = useState(null);
+  const [newCandidate, setNewCandidate] = useState({ name: "", party: "", description: "", photo: "" });
+  const [photoPreview, setPhotoPreview] = useState("");
+  // Check authentication and fetch data
   useEffect(() => {
-    const userData = localStorage.getItem("user")
-    if (!userData) {
-      router.push("/")
-      return
+    const user = localStorage.getItem("user");
+    
+    if (!user) {
+      router.push("/auth/login");
+      return;
     }
-
-    const parsedUser = JSON.parse(userData)
-    if (parsedUser.role !== "admin") {
-      router.push("/")
-      return
+    
+    const parsedUser = JSON.parse(user);
+    
+    if (!parsedUser.isAuthenticated || parsedUser.role !== "admin") {
+      router.push("/auth/login");
+      return;
     }
-
-    setUser(parsedUser)
-  }, [router])
-
-  const handlePhotoUpload = (e) => {
-    const file = e.target.files[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const photoUrl = e.target.result
-        setPhotoPreview(photoUrl)
-        setNewCandidate({ ...newCandidate, photo: photoUrl })
+    
+    setUserData(parsedUser);
+    
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        
+        // Fetch real data from API with error handling for each request
+        try {
+          // Fetch candidates
+          const candidatesResponse = await adminAPI.getCandidates(parsedUser.token);          if (candidatesResponse && candidatesResponse.data) {
+            setCandidates(candidatesResponse.data);
+          } else {
+            // No data available
+            setCandidates([]);
+            console.warn("No candidate data available");
+          }        } catch (candidateErr) {
+          console.error("Failed to fetch candidates:", candidateErr);
+          setCandidates([]);
+          setError("Failed to fetch candidates. Please try again.");
+        }
+        
+        try {
+          // Fetch voters
+          const votersResponse = await adminAPI.getVoters(parsedUser.token);
+          if (votersResponse && votersResponse.data) {
+            setVoters(votersResponse.data);
+          } else {
+            setVoters([]);
+          }
+        } catch (voterErr) {
+          console.error("Failed to fetch voters:", voterErr);
+          setVoters([]);
+        }
+        
+        try {
+          // Fetch statistics
+          const statsResponse = await adminAPI.getStatistics(parsedUser.token);
+          if (statsResponse && statsResponse.data) {
+            setStatistics(statsResponse.data);
+          } else {
+            setStatistics({});
+          }
+        } catch (statsErr) {
+          console.error("Failed to fetch statistics:", statsErr);
+          setStatistics({});
+        }
+        
+        try {
+          // Fetch logs
+          const logsResponse = await adminAPI.getSystemLogs(parsedUser.token);          if (logsResponse && logsResponse.data) {
+            setLogs(logsResponse.data);
+          } else {
+            // No data available
+            setLogs([]);
+            console.warn("No log data available");
+          }        } catch (logsErr) {
+          console.error("Failed to fetch logs:", logsErr);
+          setLogs([]);
+          setError("Failed to fetch logs. Please try again.");
+        }
+      } catch (err) {
+        console.error("Error in data fetching:", err);
+        setError("Failed to load admin data. Please try again.");
+      } finally {
+        setLoading(false);
       }
-      reader.readAsDataURL(file)
-    }
-  }
+    };
+    
+    fetchData();
+  }, [router]);
 
-  const handleAddCandidate = () => {
-    const candidate = {
-      id: candidates.length + 1,
-      name: newCandidate.name,
-      party: newCandidate.party,
-      votes: 0,
-      photo: newCandidate.photo || "/placeholder.svg?height=100&width=100",
+  // Auto-clear errors after a delay
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => {
+        setError("");
+      }, 5000);
+      return () => clearTimeout(timer);
     }
-    setCandidates([...candidates, candidate])
+  }, [error]);
+  
+  // Handle candidate operations
+  const handleAddCandidate = async () => {
+    try {
+      // Form validation
+      if (!newCandidate.name || !newCandidate.party || !newCandidate.description) {
+        setError("Please fill in all required fields.");
+        return;
+      }
+      
+      // API call to add candidate
+      let photoData = newCandidate.photo || "/placeholder.svg?height=100&width=100";
+      
+      const candidateData = {
+        name: newCandidate.name,
+        party: newCandidate.party,
+        description: newCandidate.description,
+        photo: photoData
+      };
+      
+      const response = await adminAPI.addCandidate(candidateData, userData.token);
+      
+      // Update state with new candidate
+      if (response && response.data) {
+        setCandidates([...candidates, response.data]);
 
-    const logEntry = {
-      id: logs.length + 1,
-      action: "Added candidate",
-      details: newCandidate.name,
-      timestamp: new Date().toLocaleString(),
-      admin: user.email,
+        // Refresh logs to get the system-generated log entry
+        try {
+          const logsResponse = await adminAPI.getSystemLogs(userData.token);
+          if (logsResponse && logsResponse.data) {
+            setLogs(logsResponse.data);
+          }
+        } catch (logsErr) {
+          console.error("Failed to refresh logs after adding candidate:", logsErr);
+        }
+
+        // Reset form
+        setNewCandidate({ name: "", party: "", description: "", photo: "" });
+        setPhotoPreview("");
+        setShowAddDialog(false);
+      } else {
+        throw new Error("Invalid response from server");
+      }
+    } catch (err) {
+      console.error("Add candidate error:", err);
+      setError(err.message || "Failed to add candidate");
     }
-    setLogs([logEntry, ...logs])
-
-    setNewCandidate({ name: "", party: "", description: "", photo: "" })
-    setPhotoPreview("")
-    setShowAddDialog(false)
-  }
+  };
 
   const handleEditCandidate = (candidate) => {
-    setEditingCandidate(candidate)
-    setNewCandidate({ name: candidate.name, party: candidate.party, description: "", photo: candidate.photo })
-    setPhotoPreview(candidate.photo)
-    setShowEditDialog(true)
-  }
-
-  const handleUpdateCandidate = () => {
-    setCandidates(
-      candidates.map((c) =>
-        c.id === editingCandidate.id
-          ? { ...c, name: newCandidate.name, party: newCandidate.party, photo: newCandidate.photo }
-          : c,
-      ),
-    )
-
-    const logEntry = {
-      id: logs.length + 1,
-      action: "Updated candidate",
-      details: `${newCandidate.name} - Information updated`,
-      timestamp: new Date().toLocaleString(),
-      admin: user.email,
+    setEditingCandidate(candidate);
+    setNewCandidate({ 
+      name: candidate.name, 
+      party: candidate.party, 
+      description: candidate.description || "", 
+      photo: candidate.photo 
+    });
+    setPhotoPreview(candidate.photo);
+    setShowEditDialog(true);
+  };
+  const handleUpdateCandidate = async () => {
+    try {
+      // API call to update candidate
+      const candidateData = {
+        name: newCandidate.name,
+        party: newCandidate.party,
+        description: newCandidate.description,
+        photo: newCandidate.photo
+      };
+      
+      const candidateId = editingCandidate._id || editingCandidate.id;
+      const response = await adminAPI.updateCandidate(candidateId, candidateData, userData.token);
+      
+      if (response && response.data) {
+        // Update state with updated candidate
+        setCandidates(
+          candidates.map((c) =>
+            (c._id || c.id) === candidateId ? response.data : c
+          )
+        );
+  
+        // Refresh logs to get the system-generated log entry
+        try {
+          const logsResponse = await adminAPI.getSystemLogs(userData.token);
+          if (logsResponse && logsResponse.data) {
+            setLogs(logsResponse.data);
+          }
+        } catch (logsErr) {
+          console.error("Failed to refresh logs after updating candidate:", logsErr);
+        }
+  
+        // Reset form
+        setShowEditDialog(false);
+        setEditingCandidate(null);
+        setNewCandidate({ name: "", party: "", description: "", photo: "" });
+        setPhotoPreview("");
+      } else {
+        throw new Error("Invalid response from server");
+      }
+    } catch (err) {
+      console.error("Update candidate error:", err);
+      setError(err.message || "Failed to update candidate");
     }
-    setLogs([logEntry, ...logs])
-
-    setShowEditDialog(false)
-    setEditingCandidate(null)
-    setNewCandidate({ name: "", party: "", description: "", photo: "" })
-    setPhotoPreview("")
-  }
+  };
 
   const handleDeleteCandidate = (candidateId) => {
-    const candidate = candidates.find((c) => c.id === candidateId)
-    setCandidateToDelete(candidate)
-    setShowDeleteDialog(true)
-  }
-
-  const confirmDeleteCandidate = () => {
-    setCandidates(candidates.filter((c) => c.id !== candidateToDelete.id))
-
-    const logEntry = {
-      id: logs.length + 1,
-      action: "Deleted candidate",
-      details: candidateToDelete.name,
-      timestamp: new Date().toLocaleString(),
-      admin: user.email,
+    const candidate = candidates.find((c) => (c._id || c.id) === candidateId);
+    setCandidateToDelete(candidate);
+    setShowDeleteDialog(true);
+  };
+  const confirmDeleteCandidate = async () => {
+    try {
+      // API call to delete candidate
+      const candidateId = candidateToDelete._id || candidateToDelete.id;
+      const response = await adminAPI.deleteCandidate(candidateId, userData.token);
+      
+      if (response && response.success) {
+        // Update state by removing candidate
+        setCandidates(candidates.filter((c) => (c._id || c.id) !== candidateId));
+  
+        // Refresh logs to get the system-generated log entry
+        try {
+          const logsResponse = await adminAPI.getSystemLogs(userData.token);
+          if (logsResponse && logsResponse.data) {
+            setLogs(logsResponse.data);
+          }
+        } catch (logsErr) {
+          console.error("Failed to refresh logs after deleting candidate:", logsErr);
+        }
+  
+        // Reset
+        setShowDeleteDialog(false);
+        setCandidateToDelete(null);
+      } else {
+        throw new Error("Delete operation failed or returned unexpected response");
+      }
+    } catch (err) {
+      console.error("Delete candidate error:", err);
+      // Check for specific error message from the backend
+      if (err.message && err.message.includes("existing votes")) {
+        setError("Cannot delete candidate with existing votes");
+      } else {
+        setError(err.message || "Failed to delete candidate");
+      }
+      setShowDeleteDialog(false);
     }
-    setLogs([logEntry, ...logs])
-
-    setShowDeleteDialog(false)
-    setCandidateToDelete(null)
-  }
+  };
+  
+  // Handle voter verification
+  const handleVerifyVoter = async (id) => {
+    try {
+      await adminAPI.verifyVoter(id, userData.token);
+      setVoters(voters.map(v => v._id === id ? {...v, verified: true} : v));
+    } catch (err) {
+      console.error("Verify voter error:", err);
+      setError(err.message || "Failed to verify voter");
+    }
+  };
 
   const handleLogout = () => {
-    localStorage.removeItem("user")
-    router.push("/")
+    localStorage.removeItem("user");
+    router.push("/auth/login");
+  };
+
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Check file size - limit to 300KB to prevent 413 Payload Too Large errors
+      if (file.size > 300 * 1024) {
+        setError("Image size is too large. Please use an image smaller than 300KB.");
+        e.target.value = ''; // Reset the file input
+        return;
+      }
+      
+      // Check file type
+      if (!file.type.match('image/jpeg') && !file.type.match('image/png') && !file.type.match('image/webp')) {
+        setError("Please use JPG, PNG, or WebP image formats only.");
+        e.target.value = ''; // Reset the file input
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const photoUrl = e.target.result;
+        setPhotoPreview(photoUrl);
+        setNewCandidate({ ...newCandidate, photo: photoUrl });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Calculate total votes from candidates
+  const totalVotes = candidates.reduce((sum, candidate) => sum + (candidate.votes || 0), 0);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center">
+        <p>Loading admin dashboard...</p>
+      </div>
+    );
   }
 
-  const totalVotes = candidates.reduce((sum, candidate) => sum + candidate.votes, 0)
-
-  if (!user) return null
+  if (!userData) return null;
 
   const SidebarContent = () => (
     <>
@@ -254,13 +385,16 @@ export default function AdminDashboard() {
       <nav className="flex-1 p-3 sm:p-4">
         <div className="space-y-1 sm:space-y-2">
           {sidebarItems.map((item) => {
-            const Icon = item.icon
-            return (
-              <button
+            const Icon = item.icon;
+            return (              <button
                 key={item.id}
                 onClick={() => {
-                  setActiveTab(item.id)
-                  setSidebarOpen(false)
+                  if (item.id === "settings") {
+                    router.push("/admin/settings");
+                  } else {
+                    setActiveTab(item.id);
+                    setSidebarOpen(false);
+                  }
                 }}
                 className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left transition-colors text-sm sm:text-base ${
                   activeTab === item.id ? "bg-red-600 text-white" : "text-gray-300 hover:bg-gray-800 hover:text-white"
@@ -269,7 +403,7 @@ export default function AdminDashboard() {
                 <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
                 <span>{item.label}</span>
               </button>
-            )
+            );
           })}
         </div>
       </nav>
@@ -279,15 +413,15 @@ export default function AdminDashboard() {
         <div className="flex items-center space-x-3 mb-3">
           <Avatar className="h-6 w-6 sm:h-8 sm:w-8">
             <AvatarFallback className="bg-red-600 text-white text-xs sm:text-sm">
-              {user?.name
+              {userData?.name
                 ?.split(" ")
                 .map((n) => n[0])
-                .join("")}
+                .join("") || "A"}
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0">
-            <p className="text-xs sm:text-sm font-medium truncate">{user?.name}</p>
-            <p className="text-xs text-gray-400 truncate">{user?.email}</p>
+            <p className="text-xs sm:text-sm font-medium truncate">{userData?.name || "Admin User"}</p>
+            <p className="text-xs text-gray-400 truncate">{userData?.email || "admin@securevote.tz"}</p>
           </div>
         </div>
         <Button variant="ghost" size="sm" onClick={handleLogout} className="w-full justify-start text-xs sm:text-sm">
@@ -296,11 +430,10 @@ export default function AdminDashboard() {
         </Button>
       </div>
     </>
-  )
+  );
 
   const renderContent = () => {
-    switch (activeTab) {
-      case "overview":
+    switch (activeTab) {      case "overview":
         return (
           <div className="space-y-4 sm:space-y-6">
             <div>
@@ -326,7 +459,9 @@ export default function AdminDashboard() {
                   <BarChart3 className="h-3 w-3 sm:h-4 sm:w-4 text-green-400" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-lg sm:text-2xl font-bold">{totalVotes}</div>
+                  <div className="text-lg sm:text-2xl font-bold">
+                    {statistics.totalVotesCast || totalVotes || 0}
+                  </div>
                   <p className="text-xs text-gray-400">Votes cast so far</p>
                 </CardContent>
               </Card>
@@ -337,19 +472,25 @@ export default function AdminDashboard() {
                   <Activity className="h-3 w-3 sm:h-4 sm:w-4 text-purple-400" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-lg sm:text-2xl font-bold text-purple-400">68.5%</div>
+                  <div className="text-lg sm:text-2xl font-bold text-purple-400">
+                    {statistics.votingPercentage ? 
+                      statistics.votingPercentage.toFixed(1) + '%' : 
+                      "0%"}
+                  </div>
                   <p className="text-xs text-gray-400">Of registered voters</p>
                 </CardContent>
               </Card>
 
               <Card className="bg-gray-900 border-gray-700">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-xs sm:text-sm font-medium">System Status</CardTitle>
-                  <Activity className="h-3 w-3 sm:h-4 sm:w-4 text-green-400" />
+                  <CardTitle className="text-xs sm:text-sm font-medium">Registered Voters</CardTitle>
+                  <Users className="h-3 w-3 sm:h-4 sm:w-4 text-green-400" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-lg sm:text-2xl font-bold text-green-400">Active</div>
-                  <p className="text-xs text-gray-400">All systems operational</p>
+                  <div className="text-lg sm:text-2xl font-bold text-white">
+                    {statistics.totalRegisteredVoters || voters.length || 0}
+                  </div>
+                  <p className="text-xs text-gray-400">Total registered</p>
                 </CardContent>
               </Card>
             </div>
@@ -361,26 +502,38 @@ export default function AdminDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3 sm:space-y-4">
-                  {logs.slice(0, 5).map((log) => (
-                    <div
-                      key={log.id}
-                      className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-gray-800 rounded-lg space-y-2 sm:space-y-0"
-                    >
-                      <div>
-                        <p className="text-sm sm:text-base font-medium">{log.action}</p>
-                        <p className="text-xs sm:text-sm text-gray-400">{log.details}</p>
+                  {logs.length > 0 ? logs.slice(0, 5).map((log) => {
+                    // Format log data from the API
+                    const logId = log._id || log.id;
+                    const logAction = log.action || '';
+                    const logMessage = log.message || log.details || '';
+                    const logTime = log.timestamp ? new Date(log.timestamp).toLocaleString() : '';
+                    const logUser = log.userRole === 'admin' ? (log.metadata?.adminEmail || 'System') : (log.admin || 'System');
+                    
+                    return (
+                      <div
+                        key={logId}
+                        className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-gray-800 rounded-lg space-y-2 sm:space-y-0"
+                      >
+                        <div>
+                          <p className="text-sm sm:text-base font-medium">{logAction}</p>
+                          <p className="text-xs sm:text-sm text-gray-400">{logMessage}</p>
+                        </div>
+                        <div className="text-left sm:text-right">
+                          <p className="text-xs sm:text-sm text-gray-400">{logTime}</p>
+                          <p className="text-xs text-gray-500">{logUser}</p>
+                        </div>
                       </div>
-                      <div className="text-left sm:text-right">
-                        <p className="text-xs sm:text-sm text-gray-400">{log.timestamp}</p>
-                        <p className="text-xs text-gray-500">{log.admin}</p>
-                      </div>
+                    );
+                  }) : (                    <div className="text-center py-6">
+                      <p className="text-gray-400">No activity logs found</p>
                     </div>
-                  ))}
+                  )}
                 </div>
               </CardContent>
             </Card>
           </div>
-        )
+        );
 
       case "candidates":
         return (
@@ -397,11 +550,9 @@ export default function AdminDashboard() {
                 <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-2" />
                 Add Candidate
               </Button>
-            </div>
-
-            <div className="grid gap-4">
-              {candidates.map((candidate) => (
-                <Card key={candidate.id} className="bg-gray-900 border-gray-700">
+            </div>            <div className="grid gap-4">
+              {candidates.length > 0 ? candidates.map((candidate) => (
+                <Card key={candidate._id || candidate.id} className="bg-gray-900 border-gray-700">
                   <CardContent className="p-4 sm:p-6">
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-4 sm:space-y-0">
                       <div className="flex items-center space-x-3 sm:space-x-4">
@@ -417,7 +568,7 @@ export default function AdminDashboard() {
                         <div>
                           <h3 className="text-sm sm:text-base font-semibold">{candidate.name}</h3>
                           <p className="text-xs sm:text-sm text-blue-400">{candidate.party}</p>
-                          <p className="text-xs text-gray-400">{candidate.votes} votes</p>
+                          <p className="text-xs text-gray-400">{candidate.votes || 0} votes</p>
                         </div>
                       </div>
                       <div className="flex space-x-2 w-full sm:w-auto">
@@ -432,7 +583,7 @@ export default function AdminDashboard() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleDeleteCandidate(candidate.id)}
+                          onClick={() => handleDeleteCandidate(candidate._id || candidate.id)}
                           className="border-red-600 text-red-400 hover:bg-red-950 flex-1 sm:flex-none"
                         >
                           <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" />
@@ -440,13 +591,25 @@ export default function AdminDashboard() {
                       </div>
                     </div>
                   </CardContent>
+                </Card>              )) : (
+                <Card className="bg-gray-900 border-gray-700">
+                  <CardContent className="p-4 sm:p-6 text-center">
+                    <div className="py-8">
+                      <p className="text-gray-400 mb-4">No candidates found</p>
+                      <Button
+                        onClick={() => setShowAddDialog(true)}
+                        className="bg-green-600 hover:bg-green-700 text-sm"
+                      >
+                        <Plus className="h-3 w-3 mr-2" />
+                        Add Your First Candidate
+                      </Button>
+                    </div>
+                  </CardContent>
                 </Card>
-              ))}
+              )}
             </div>
           </div>
-        )
-
-      case "statistics":
+        );      case "statistics":
         return (
           <div className="space-y-4 sm:space-y-6">
             <div>
@@ -461,25 +624,55 @@ export default function AdminDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {candidates.map((candidate) => {
-                    const percentage = totalVotes > 0 ? ((candidate.votes / totalVotes) * 100).toFixed(1) : 0
-                    return (
-                      <div key={candidate.id} className="space-y-2">
-                        <div className="flex justify-between">
-                          <span className="text-sm sm:text-base font-medium">{candidate.name}</span>
-                          <span className="text-xs sm:text-sm text-gray-400">
-                            {candidate.votes} votes ({percentage}%)
-                          </span>
+                  {/* Use votesPerCandidate from real API data if available */}
+                  {statistics.votesPerCandidate ? (
+                    statistics.votesPerCandidate.map((candidateStat) => {
+                      const percentage = statistics.totalVotesCast > 0 
+                        ? ((candidateStat.count / statistics.totalVotesCast) * 100).toFixed(1) 
+                        : 0;
+                      
+                      return (
+                        <div key={candidateStat._id} className="space-y-2">
+                          <div className="flex justify-between">
+                            <span className="text-sm sm:text-base font-medium">{candidateStat.name}</span>
+                            <span className="text-xs sm:text-sm text-gray-400">
+                              {candidateStat.count || 0} votes ({percentage}%)
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-700 rounded-full h-2">
+                            <div
+                              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                              style={{ width: `${percentage}%` }}
+                            ></div>
+                          </div>
                         </div>
-                        <div className="w-full bg-gray-700 rounded-full h-2">
-                          <div
-                            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                            style={{ width: `${percentage}%` }}
-                          ></div>
+                      );
+                    })                  ) : candidates.length > 0 ? (
+                    // Fallback to using candidate data if statistics not available
+                    candidates.map((candidate) => {
+                      const percentage = totalVotes > 0 ? ((candidate.votes || 0) / totalVotes * 100).toFixed(1) : 0;
+                      return (
+                        <div key={candidate._id || candidate.id} className="space-y-2">
+                          <div className="flex justify-between">
+                            <span className="text-sm sm:text-base font-medium">{candidate.name}</span>
+                            <span className="text-xs sm:text-sm text-gray-400">
+                              {candidate.votes || 0} votes ({percentage}%)
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-700 rounded-full h-2">
+                            <div
+                              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                              style={{ width: `${percentage}%` }}
+                            ></div>
+                          </div>
                         </div>
-                      </div>
-                    )
-                  })}
+                      );
+                    })
+                  ) : (
+                    <div className="text-center py-6">
+                      <p className="text-gray-400">No voting statistics available yet</p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -489,11 +682,41 @@ export default function AdminDashboard() {
                 <CardHeader>
                   <CardTitle className="text-lg sm:text-xl">Leading Candidate</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  {candidates.length > 0 && (
+                <CardContent>                  {statistics.votesPerCandidate && statistics.votesPerCandidate.length > 0 ? (
+                    // Use the first candidate from the sorted statistics (already sorted by vote count)
                     <div className="flex items-center space-x-3 sm:space-x-4">
                       <Avatar className="h-12 w-12 sm:h-16 sm:w-16">
-                        <AvatarImage src={candidates[0].photo || "/placeholder.svg"} alt={candidates[0].name} />
+                        {/* Look up the candidate photo from candidates array */}
+                        <AvatarImage 
+                          src={
+                            candidates.find(c => c._id === statistics.votesPerCandidate[0]._id)?.photo || 
+                            "/placeholder.svg"
+                          }
+                          alt={statistics.votesPerCandidate[0].name} 
+                        />
+                        <AvatarFallback>
+                          {statistics.votesPerCandidate[0].name
+                            .split(" ")
+                            .map((n) => n[0])
+                            .join("")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <h3 className="text-sm sm:text-lg font-semibold">{statistics.votesPerCandidate[0].name}</h3>
+                        <p className="text-xs sm:text-base text-blue-400">{statistics.votesPerCandidate[0].party}</p>
+                        <p className="text-lg sm:text-2xl font-bold text-green-400">
+                          {statistics.votesPerCandidate[0].count || 0} votes
+                        </p>
+                      </div>
+                    </div>
+                  ) : candidates.length > 0 ? (
+                    // Fallback to first candidate if statistics not available
+                    <div className="flex items-center space-x-3 sm:space-x-4">
+                      <Avatar className="h-12 w-12 sm:h-16 sm:w-16">
+                        <AvatarImage 
+                          src={candidates[0].photo || "/placeholder.svg"} 
+                          alt={candidates[0].name} 
+                        />
                         <AvatarFallback>
                           {candidates[0].name
                             .split(" ")
@@ -504,8 +727,13 @@ export default function AdminDashboard() {
                       <div>
                         <h3 className="text-sm sm:text-lg font-semibold">{candidates[0].name}</h3>
                         <p className="text-xs sm:text-base text-blue-400">{candidates[0].party}</p>
-                        <p className="text-lg sm:text-2xl font-bold text-green-400">{candidates[0].votes} votes</p>
-                      </div>
+                        <p className="text-lg sm:text-2xl font-bold text-green-400">
+                          {candidates[0].votes || 0} votes
+                        </p>
+                      </div>                    </div>
+                  ) : (
+                    <div className="text-center py-6">
+                      <p className="text-gray-400">No candidate data available</p>
                     </div>
                   )}
                 </CardContent>
@@ -514,11 +742,10 @@ export default function AdminDashboard() {
               <Card className="bg-gray-900 border-gray-700">
                 <CardHeader>
                   <CardTitle className="text-lg sm:text-xl">Election Summary</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3 sm:space-y-4">
+                </CardHeader>                <CardContent className="space-y-3 sm:space-y-4">
                   <div className="flex justify-between text-sm sm:text-base">
                     <span>Total Votes:</span>
-                    <span className="font-bold">{totalVotes}</span>
+                    <span className="font-bold">{statistics.totalVotesCast || totalVotes || 0}</span>
                   </div>
                   <div className="flex justify-between text-sm sm:text-base">
                     <span>Candidates:</span>
@@ -526,19 +753,19 @@ export default function AdminDashboard() {
                   </div>
                   <div className="flex justify-between text-sm sm:text-base">
                     <span>Turnout Rate:</span>
-                    <span className="font-bold text-green-400">68.5%</span>
+                    <span className="font-bold text-green-400">
+                      {statistics.votingPercentage ? statistics.votingPercentage.toFixed(1) + '%' : '0%'}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm sm:text-base">
-                    <span>Status:</span>
-                    <Badge className="bg-green-600">Active</Badge>
+                    <span>Registered Voters:</span>
+                    <span className="font-bold">{statistics.totalRegisteredVoters || voters.length || 0}</span>
                   </div>
                 </CardContent>
               </Card>
             </div>
           </div>
-        )
-
-      case "logs":
+        );      case "logs":
         return (
           <div className="space-y-4 sm:space-y-6">
             <div>
@@ -556,35 +783,73 @@ export default function AdminDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {logs.map((log) => (
-                    <div
-                      key={log.id}
-                      className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 sm:p-4 bg-gray-800 rounded-lg border border-gray-700 space-y-2 sm:space-y-0"
-                    >
-                      <div className="flex-1">
-                        <div className="flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0 sm:space-x-2">
-                          <Badge variant="outline" className="text-xs w-fit">
-                            {log.action}
-                          </Badge>
-                          <span className="text-xs sm:text-sm font-medium">{log.details}</span>
+                  {logs.length > 0 ? (
+                    logs.map((log) => {
+                      // Get formatted log details based on real API data
+                      const logId = log._id || log.id;
+                      const logAction = log.action || '';
+                      const logLevel = log.level || 'INFO';
+                      
+                      // Format the message or details nicely
+                      const logDetails = log.message || log.details || '';
+                      
+                      // Format the timestamp
+                      const logTime = log.timestamp ? new Date(log.timestamp).toLocaleString() : log.timestamp;
+                      
+                      // Get user info
+                      const adminUser = log.userRole === 'admin' ? (log.metadata?.adminEmail || 'System') : (log.admin || 'System');
+                      
+                      // Get badge color based on log level
+                      let badgeClass = "text-xs w-fit ";
+                      switch(logLevel) {
+                        case 'WARNING':
+                          badgeClass += "bg-yellow-900 border-yellow-700 text-yellow-300";
+                          break;
+                        case 'ERROR':
+                          badgeClass += "bg-red-900 border-red-700 text-red-300";
+                          break;
+                        case 'CRITICAL':
+                          badgeClass += "bg-red-900 border-red-700 text-red-300";
+                          break;
+                        default:
+                          badgeClass += "bg-gray-800 border-gray-600";
+                      }
+                      
+                      return (
+                        <div
+                          key={logId}
+                          className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 sm:p-4 bg-gray-800 rounded-lg border border-gray-700 space-y-2 sm:space-y-0"
+                        >
+                          <div className="flex-1">
+                            <div className="flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0 sm:space-x-2">
+                              <Badge variant="outline" className={badgeClass}>
+                                {logAction}
+                              </Badge>
+                              <span className="text-xs sm:text-sm font-medium">{logDetails}</span>
+                            </div>
+                            <p className="text-xs text-gray-400 mt-1">by {adminUser}</p>
+                          </div>
+                          <div className="text-left sm:text-right">
+                            <p className="text-xs sm:text-sm text-gray-300">{logTime}</p>
+                          </div>
                         </div>
-                        <p className="text-xs text-gray-400 mt-1">by {log.admin}</p>
-                      </div>
-                      <div className="text-left sm:text-right">
-                        <p className="text-xs sm:text-sm text-gray-300">{log.timestamp}</p>
-                      </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-center py-6">
+                      <p className="text-gray-400">No activity logs found</p>
                     </div>
-                  ))}
+                  )}
                 </div>
               </CardContent>
             </Card>
           </div>
-        )
+        );
 
       default:
-        return null
+        return null;
     }
-  }
+  };
 
   return (
     <div className="min-h-screen bg-gray-950 text-white flex">
@@ -600,8 +865,8 @@ export default function AdminDashboard() {
               <Button variant="ghost" size="sm">
                 <Menu className="h-5 w-5" />
               </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="bg-gray-900 border-gray-700 p-0 w-64">
+            </SheetTrigger>            <SheetContent side="left" className="bg-gray-900 border-gray-700 p-0 w-64">
+              <SheetTitle className="sr-only">Admin Navigation Menu</SheetTitle>
               <div className="flex flex-col h-full">
                 <SidebarContent />
               </div>
@@ -613,11 +878,17 @@ export default function AdminDashboard() {
       {/* Desktop Sidebar */}
       <div className="hidden lg:flex w-64 bg-gray-900 border-r border-gray-800 flex-col fixed left-0 top-0 h-full z-40">
         <SidebarContent />
-      </div>
-
-      {/* Main Content */}
+      </div>      {/* Main Content */}
       <div className="flex-1 lg:ml-64 pt-16 lg:pt-0">
-        <div className="p-4 sm:p-6 lg:p-8">{renderContent()}</div>
+        <div className="p-4 sm:p-6 lg:p-8">
+          {error && (
+            <div className="bg-red-900/50 border border-red-700 rounded-md p-3 mb-4 flex items-start">
+              <AlertTriangle className="h-5 w-5 text-red-400 mr-2 mt-0.5 flex-shrink-0" />
+              <p className="text-red-100">{error}</p>
+            </div>
+          )}
+          {renderContent()}
+        </div>
       </div>
 
       {/* Add Candidate Dialog */}
@@ -642,8 +913,8 @@ export default function AdminDashboard() {
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        setPhotoPreview("")
-                        setNewCandidate({ ...newCandidate, photo: "" })
+                        setPhotoPreview("");
+                        setNewCandidate({ ...newCandidate, photo: "" });
                       }}
                       className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0"
                     >
@@ -732,8 +1003,8 @@ export default function AdminDashboard() {
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        setPhotoPreview("")
-                        setNewCandidate({ ...newCandidate, photo: "" })
+                        setPhotoPreview("");
+                        setNewCandidate({ ...newCandidate, photo: "" });
                       }}
                       className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0"
                     >
@@ -774,6 +1045,18 @@ export default function AdminDashboard() {
                 value={newCandidate.party}
                 onChange={(e) => setNewCandidate({ ...newCandidate, party: e.target.value })}
                 className="bg-gray-800 border-gray-600 text-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editDescription" className="text-sm">
+                Description
+              </Label>
+              <Textarea
+                id="editDescription"
+                value={newCandidate.description}
+                onChange={(e) => setNewCandidate({ ...newCandidate, description: e.target.value })}
+                className="bg-gray-800 border-gray-600 text-sm"
+                placeholder="Brief candidate description..."
               />
             </div>
           </div>
@@ -828,5 +1111,5 @@ export default function AdminDashboard() {
         </DialogContent>
       </Dialog>
     </div>
-  )
+  );
 }

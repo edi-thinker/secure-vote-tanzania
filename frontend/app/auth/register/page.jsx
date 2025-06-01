@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Shield, UserPlus, CheckCircle, AlertCircle } from "lucide-react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { authAPI } from "@/lib/api"
 
 export default function RegisterPage() {
   const [registerForm, setRegisterForm] = useState({
@@ -42,12 +43,35 @@ export default function RegisterPage() {
       return
     }
 
-    // Simulate registration delay
-    await new Promise((resolve) => setTimeout(resolve, 2000))
-
-    // Mock registration success
-    setSuccess(true)
-    setIsLoading(false)
+    try {
+      // Send registration request to API
+      const response = await authAPI.register({
+        name: registerForm.name,
+        email: registerForm.email,
+        password: registerForm.password,
+        nin: registerForm.nin,
+        voterId: registerForm.voterId
+      })
+      
+      // Store token and user data
+      const userData = {
+        email: registerForm.email,
+        token: response.token,
+        role: response.user.role,
+        name: response.user.name,
+        id: response.user.id,
+        isAuthenticated: true,
+      }
+      localStorage.setItem("user", JSON.stringify(userData))
+      
+      // Set success state
+      setSuccess(true)
+      setIsLoading(false)
+    } catch (err) {
+      console.error("Registration error:", err)
+      setError(err.message || "Registration failed. Please try again.")
+      setIsLoading(false)
+    }
 
     // Redirect to login after 3 seconds
     setTimeout(() => {

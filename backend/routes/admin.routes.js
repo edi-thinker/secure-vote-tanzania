@@ -10,7 +10,7 @@
 
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const { protect, authorize, require2FA } = require('../middleware/auth');
+const { protect, authorize } = require('../middleware/auth');
 const { preventVoteModification } = require('../middleware/voteSecurity');
 const Candidate = require('../models/Candidate');
 const Vote = require('../models/Vote');
@@ -23,7 +23,6 @@ const router = express.Router();
 // Apply auth middleware to all routes
 router.use(protect);
 router.use(authorize('admin'));
-router.use(require2FA);
 
 /**
  * @route   GET /api/admin/candidates
@@ -376,21 +375,19 @@ router.get('/voters', async (req, res) => {
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 20;
     const startIndex = (page - 1) * limit;
-    
-    // Get voters with user details but mask sensitive info
+      // Get voters with user details but mask sensitive info
     const voters = await Voter.find()
       .populate('user', 'name email createdAt')
-      .select('verified verifiedAt hasVoted votedAt')
+      .select('verified verifiedAt hasVoted votedAt nin voterId')
       .sort({ createdAt: -1 })
       .skip(startIndex)
       .limit(limit);
-    
-    // Add masked NIN and Voter ID
+      // Add masked NIN and Voter ID
     const sanitizedVoters = voters.map(voter => {
       const voterObj = voter.toObject();
-      // Show only last few digits of sensitive data
-      voterObj.nin = `xxxxxxxxxxxxxx${voter.nin.slice(-6)}`;
-      voterObj.voterId = `xxxxxx${voter.voterId.slice(-4)}`;
+      // Show only last few digits of sensitive data with safety checks
+      voterObj.nin = voter.nin ? `xxxxxxxxxxxxxx${voter.nin.slice(-6)}` : 'N/A';
+      voterObj.voterId = voter.voterId ? `xxxxxx${voter.voterId.slice(-4)}` : 'N/A';
       return voterObj;
     });
     

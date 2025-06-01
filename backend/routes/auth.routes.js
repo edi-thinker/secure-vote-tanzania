@@ -11,6 +11,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const speakeasy = require('speakeasy');
 const User = require('../models/User');
 const Voter = require('../models/Voter');
 const { logActivity } = require('../utils/logger');
@@ -235,11 +236,14 @@ router.post('/verify-2fa', [
         success: false,
         message: '2FA not enabled for this user'
       });
-    }
-
-    // In a real system, we would validate the token with speakeasy
-    // For this implementation, we'll use a simplified approach
-    const isValidToken = token === '123456'; // Replace with actual validation
+    }    // Validate the token with speakeasy
+    // Only accept valid TOTP tokens
+    const isValidToken = speakeasy.totp.verify({
+      secret: user.mfaSecret,
+      encoding: 'base32',
+      token: token,
+      window: 1 // Allow a 1-step window to account for time drift
+    });
 
     if (!isValidToken) {
       await logActivity({
@@ -297,9 +301,7 @@ router.get('/me', protect, async (req, res) => {
     let voterDetails = null;
     if (user.role === 'voter') {
       voterDetails = await Voter.findOne({ user: user._id });
-    }
-
-    res.status(200).json({
+    }    res.status(200).json({
       success: true,
       data: {
         user: {
@@ -307,6 +309,7 @@ router.get('/me', protect, async (req, res) => {
           name: user.name,
           email: user.email,
           role: user.role,
+          mfaEnabled: user.mfaEnabled || false,
           createdAt: user.createdAt,
           lastLogin: user.lastLogin
         },
@@ -408,6 +411,170 @@ router.post('/reset-password', [
 });
 
 /**
+ * @route   POST /api/auth/setup-2fa
+ * @desc    Generate 2FA secret for user
+ * @access  Private (admin, auditor)
+ */
+router.post('/setup-2fa', protect, authorize('admin', 'auditor'), async (req, res) => {
+  try {
+    // Generate a new secret
+    const speakeasy = require('speakeasy');
+    const secret = speakeasy.generateSecret({
+      name: `SecureVote Tanzania (${req.user.email})`,
+      length: 20,
+    });
+    
+    // Return the secret and otpauth URL (for QR code generation)
+    res.status(200).json({
+      success: true,
+      data: {
+        secret: secret.base32,
+        otpauthUrl: secret.otpauth_url
+      }
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: 'Error setting up 2FA'
+    });
+  }
+});
+
+/**
+ * @route   POST /api/auth/verify-setup-2fa
+ * @desc    Verify and enable 2FA for user
+ * @access  Private (admin, auditor)
+ */
+router.post('/verify-setup-2fa', protect, authorize('admin', 'auditor'), async (req, res) => {
+  try {
+    const { token, secret } = req.body;
+    
+    if (!token || !secret) {
+      return res.status(400).json({
+        success: false,
+        message: 'Token and secret are required'
+      });
+    }
+    
+    // Verify the token matches the secret
+    const speakeasy = require('speakeasy');
+    const verified = speakeasy.totp.verify({
+      secret: secret,
+      encoding: 'base32',
+      token: token,
+      window: 1 // Allow 1 step variance (30 seconds)
+    });
+    
+    if (!verified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid verification code'
+      });
+    }
+    
+    // Save the secret to the user
+    const user = await User.findById(req.user._id);
+    user.mfaSecret = secret;
+    user.mfaEnabled = true;
+    await user.save();
+    
+    // Log the activity
+    await logActivity({
+      level: 'INFO',
+      message: '2FA setup completed',
+      component: 'Authentication',
+      action: '2FASetup',
+      userId: req.user._id,
+      userRole: req.user.role,
+      ipAddress: req.ip
+    });
+    
+    res.status(200).json({
+      success: true,
+      message: '2FA enabled successfully'
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: 'Error enabling 2FA'
+    });
+  }
+});
+
+/**
+ * @route   POST /api/auth/disable-2fa
+ * @desc    Disable 2FA for user
+ * @access  Private (admin, auditor)
+ */
+router.post('/disable-2fa', protect, authorize('admin', 'auditor'), async (req, res) => {
+  try {
+    // Require current token for security (no password needed as the user is already authenticated)
+    const { token } = req.body;
+    
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        message: 'Current 2FA token is required'
+      });
+    }
+    
+    // Get user with MFA secret
+    const user = await User.findById(req.user._id).select('+mfaSecret');
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    // Verify token one last time
+    const speakeasy = require('speakeasy');
+    const verified = speakeasy.totp.verify({
+      secret: user.mfaSecret,
+      encoding: 'base32',
+      token: token,
+      window: 1
+    });
+    
+    if (!verified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid verification code'
+      });
+    }
+    
+    // Disable 2FA
+    user.mfaEnabled = false;
+    user.mfaSecret = undefined;
+    await user.save();
+    
+    // Log the activity
+    await logActivity({
+      level: 'WARNING',
+      message: '2FA disabled',
+      component: 'Authentication',
+      action: '2FADisable',
+      userId: user._id,
+      userRole: user.role,
+      ipAddress: req.ip
+    });
+    
+    res.status(200).json({
+      success: true,
+      message: '2FA disabled successfully'
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: 'Error disabling 2FA'
+    });
+  }
+});
+
+/**
  * Helper function to send JWT token response
  */
 const sendTokenResponse = (user, statusCode, res) => {
@@ -425,7 +592,6 @@ const sendTokenResponse = (user, statusCode, res) => {
   if (process.env.NODE_ENV === 'production') {
     options.secure = true;
   }
-
   res.status(statusCode).json({
     success: true,
     token,
@@ -433,7 +599,8 @@ const sendTokenResponse = (user, statusCode, res) => {
       id: user._id,
       name: user.name,
       email: user.email,
-      role: user.role
+      role: user.role,
+      mfaEnabled: user.mfaEnabled || false
     }
   });
 };
