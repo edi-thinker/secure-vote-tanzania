@@ -153,14 +153,7 @@ export default function LoginPage() {
               </p>
             </div>
 
-            <div className="mt-6 p-3 sm:p-4 bg-gray-800 rounded-lg">
-              <h4 className="font-semibold text-xs sm:text-sm mb-2 text-blue-300">Demo Credentials</h4>
-              <div className="text-xs text-gray-400 space-y-1">
-                <p>Voter: voter@demo.com / password123</p>
-                <p>Admin: admin@demo.com / admin123</p>
-                <p>Auditor: auditor@demo.com / audit123</p>
-              </div>
-            </div>
+            
           </CardContent>
         </Card>
 
